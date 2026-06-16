@@ -1,6 +1,6 @@
 # SHA-256 VHDL Project
 
-My final project for Sistemas Digitais course is going to be the development of a SHA-256 algorithm using VHDL.
+My final project for Sistemas Digitais course is going to be the development of a SHA-256 hashing algorithm using VHDL.
 
 ## Group Members
 
@@ -18,9 +18,9 @@ Out of the different ciphers in the family, SHA-256 in general ends having the m
 
 ## Project
 
-The idea of the project will be to implement one of the SHA-2 algorithms, SHA-256, using VHDL. Aside from a few control and clock signals, the project will have 2 64-bit inputs to determine the location and size of a variable-sized input byte array, and 1 256-bit output containing the resulting SHA-256 hash.
+The idea of the project will be to implement the SHA256 algorithm using VHDL for messages of 55 bytes or less. Aside from a few control and clock signals, the system will have 1 440-bit (55 bytes) input for the message, and 1 256-bit output as the hash.
 
-As mentioned above, SHA-256 was choosen among the SHA-2 family due to it being the one with most widespread usage. While it wouldn't be too hard to implement all SHA-2 variants and letting the user select which one to use through a separate input signal, internally the bump to SHA-512 has a few changes that will either require extensive usage of generics/macros or duplication of a lot of the logic, both of which would make reviewing and developing the project a lot harder. Depending on my availability at the end of the semester I might set as a personal goal to implement all variants, but I'm constraining the initial scope of the project to just SHA-256.
+The reason behind this input size limitation is that it'll allow us to optimize the SHA256 implementation. SHA256 usually pre-processes the input by adding at minimum 65 bits of data and then splitting the input into 512-bit chunks, but by constraining our input to 440 bits (55 bytes), we can skip the chunk part and just treat the input directly as a chunk. This will allow the project to be simpler and faster.
 
 ## Structure
 
