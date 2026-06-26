@@ -11,7 +11,9 @@ entity sha256_bo is
         h_in        : in H_TYPE;
         h_out       : out H_TYPE;
         o_loop_last : out std_logic;
-        c_init, c_loop_sched, c_loop_comp, c_done : in std_logic
+        c_init, c_done : in std_logic;
+        c_sched1, c_sched2, c_sched3 : in std_logic;
+        c_comp1, c_comp2, c_comp3, c_comp4 : in std_logic
     );
 end entity;
 
@@ -27,54 +29,108 @@ architecture sha256_bo_arch of sha256_bo is
         X"19a4c116", X"1e376c08", X"2748774c", X"34b0bcb5", X"391c0cb3", X"4ed8aa4a", X"5b9cca4f", X"682e6ff3",
         X"748f82ee", X"78a5636f", X"84c87814", X"8cc70208", X"90befffa", X"a4506ceb", X"bef9a3f7", X"c67178f2"
     );
-    
+
     -- Memória para armazenamento das 64 palavras expandidas
     signal W : K_TYPE := (others => X"00000000");
     signal loop_count : unsigned(5 downto 0);
 begin
 
     -- Instanciação do módulo contador para controle de iterações
-    COUNTER: entity work.counter64 port map(clk => clk, rst => rst or c_init, value => loop_count, overflow => o_loop_last, increase => c_loop_sched or c_loop_comp);
+    -- O contador só avança no último subestado de cada iteração (sched3/comp4),
+    -- mantendo loop_count estável durante o cálculo das variáveis temporárias.
+    COUNTER: entity work.counter64 port map(clk => clk, rst => rst or c_init, value => loop_count, overflow => o_loop_last, increase => c_sched3 or c_comp4);
 
-    process (clk, rst)
-        variable loop_i : integer;
-        -- Registradores de trabalho internos para os cálculos
+    -- Algoritmo e nomes de variáveis baseados no pseudocódigo da página do SHA-2
+    -- na Wikipédia:
+    -- https://en.wikipedia.org/wiki/SHA-2#Pseudocode
+    process(clk, rst)
+        -- Variáveis que persistem entre clocks
         variable a, b, c, d, e, f, g, h : std_logic_vector(31 downto 0);
-        -- Variáveis temporárias auxiliares da compressão
-        variable T1, T2 : std_logic_vector(31 downto 0);
+        variable s0_w, s1_w : std_logic_vector(31 downto 0);
+        variable s1_big, ch, s0_big, maj : std_logic_vector(31 downto 0);
+        variable kw : std_logic_vector(31 downto 0);
+        variable temp1, temp2 : std_logic_vector(31 downto 0);
+
+        -- Variáveis que não persistem entre clocks
+        variable loop_i : integer;
+        variable s0, s1 : std_logic_vector(31 downto 0);
     begin
         -- Lógica de reset assíncrono
         if rst = '1' then
-            W <= (others => X"00000000"); 
+            W <= (others => X"00000000");
             h_out <= (others => (others => '0'));
-            
         elsif rising_edge(clk) then
-        
-            -- Estado de Inicialização: Divide o bloco de 512 bits e carrega o estado inicial
+            -- Divide o bloco de 512 bits e carrega o estado inicial
             if c_init = '1' then
-                for i in 0 to 15 loop W(i) <= chunk(511 - 32 * i downto 480 - 32 * i); end loop;
-                a := h_in(0); b := h_in(1); c := h_in(2); d := h_in(3); e := h_in(4); f := h_in(5); g := h_in(6); h := h_in(7);
-                
-            -- Estado de Agendamento: Expande as palavras W[16] a W[63]
-            elsif c_loop_sched = '1' then
+                for i in 0 to 15 loop
+                    W(i) <= chunk(511 - 32 * i downto 480 - 32 * i);
+                end loop;
+                a := h_in(0);
+                b := h_in(1);
+                c := h_in(2);
+                d := h_in(3);
+                e := h_in(4);
+                f := h_in(5);
+                g := h_in(6);
+                h := h_in(7);
+
+            -- s0 = sigma(W[i-15]); s0_w = s0 + W[i-16]
+            elsif c_sched1 = '1' then
                 loop_i := to_integer(loop_count);
-                W(loop_i) <= std_logic_vector(unsigned(W(loop_i-16)) + unsigned(sha_ssig0(W(loop_i-15))) + unsigned(W(loop_i-7)) + unsigned(sha_ssig1(W(loop_i-2))));
-                
-            -- Estado de Compressão: Atualiza os registradores de trabalho em 64 rodadas
-            elsif c_loop_comp = '1' then
+                s0   := sha_ssig0(W(loop_i - 15));
+                s0_w := std_logic_vector(unsigned(s0) + unsigned(W(loop_i - 16)));
+
+            -- s1 = sigma(W[i-2]); s1_w = s1 + W[i-7]
+            elsif c_sched2 = '1' then
                 loop_i := to_integer(loop_count);
-                T1 := std_logic_vector(unsigned(h) + unsigned(sha_bsig1(e)) + unsigned(sha_ch(e, f, g)) + unsigned(K(loop_i)) + unsigned(W(loop_i)));
-                T2 := std_logic_vector(unsigned(sha_bsig0(a)) + unsigned(sha_maj(a, b, c)));
-                h := g; g := f; f := e; e := std_logic_vector(unsigned(d) + unsigned(T1)); d := c; c := b; b := a; a := std_logic_vector(unsigned(T1) + unsigned(T2));
-                
-            -- Estado Final: Soma o resultado processado ao valor anterior do hash
+                s1   := sha_ssig1(W(loop_i - 2));
+                s1_w := std_logic_vector(unsigned(s1) + unsigned(W(loop_i - 7)));
+
+            -- w[i] = (s0 + w[i-16) + (s1 + w[i-7])
+            elsif c_sched3 = '1' then
+                loop_i := to_integer(loop_count);
+                W(loop_i) <= std_logic_vector(unsigned(s0_w) + unsigned(s1_w));
+
+            -- Valores intermediários baratos; kw = k[i]+w[i]
+            elsif c_comp1 = '1' then
+                loop_i := to_integer(loop_count);
+                s1_big := sha_bsig1(e);     -- S1  = (e ror 6) xor (e ror 11) xor (e ror 25)
+                ch     := sha_ch(e, f, g);  -- ch  = (e and f) xor ((not e) and g)
+                s0_big := sha_bsig0(a);     -- S0  = (a ror 2) xor (a ror 13) xor (a ror 22)
+                maj    := sha_maj(a, b, c); -- maj = (a and b) xor (a and c) xor (b and c)
+                kw     := std_logic_vector(unsigned(K(loop_i)) + unsigned(W(loop_i)));
+
+            -- temp1 = h + S1 + ch + kw
+            elsif c_comp2 = '1' then
+                temp1 := std_logic_vector(unsigned(h) + unsigned(s1_big) + unsigned(ch) + unsigned(kw));
+
+            -- temp2 = S0 + maj
+            elsif c_comp3 = '1' then
+                temp2 := std_logic_vector(unsigned(s0_big) + unsigned(maj));
+
+            -- Atualiza os registradores de estado
+            elsif c_comp4 = '1' then
+                h := g;
+                g := f;
+                f := e;
+                e := std_logic_vector(unsigned(d) + unsigned(temp1));
+                d := c;
+                c := b;
+                b := a;
+                a := std_logic_vector(unsigned(temp1) + unsigned(temp2));
+
+            -- Estado final: soma o resultado processado ao valor anterior do hash
             elsif c_done = '1' then
-                h_out(0) <= std_logic_vector(unsigned(h_in(0)) + unsigned(a)); h_out(1) <= std_logic_vector(unsigned(h_in(1)) + unsigned(b));
-                h_out(2) <= std_logic_vector(unsigned(h_in(2)) + unsigned(c)); h_out(3) <= std_logic_vector(unsigned(h_in(3)) + unsigned(d));
-                h_out(4) <= std_logic_vector(unsigned(h_in(4)) + unsigned(e)); h_out(5) <= std_logic_vector(unsigned(h_in(5)) + unsigned(f));
-                h_out(6) <= std_logic_vector(unsigned(h_in(6)) + unsigned(g)); h_out(7) <= std_logic_vector(unsigned(h_in(7)) + unsigned(h));
+                h_out(0) <= std_logic_vector(unsigned(h_in(0)) + unsigned(a));
+                h_out(1) <= std_logic_vector(unsigned(h_in(1)) + unsigned(b));
+                h_out(2) <= std_logic_vector(unsigned(h_in(2)) + unsigned(c));
+                h_out(3) <= std_logic_vector(unsigned(h_in(3)) + unsigned(d));
+                h_out(4) <= std_logic_vector(unsigned(h_in(4)) + unsigned(e));
+                h_out(5) <= std_logic_vector(unsigned(h_in(5)) + unsigned(f));
+                h_out(6) <= std_logic_vector(unsigned(h_in(6)) + unsigned(g));
+                h_out(7) <= std_logic_vector(unsigned(h_in(7)) + unsigned(h));
             end if;
-            
+
         end if;
     end process;
 end architecture;

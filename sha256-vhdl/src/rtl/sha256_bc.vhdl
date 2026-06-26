@@ -8,7 +8,10 @@ entity sha256_bc is
         -- Entradas de controle e status vindos do contador (o_loop_last)
         clk, rst, rdy, o_loop_last : in std_logic;
         -- Saídas de comando para a Base Operativa (prefixo 'c_') e finalização ('fin')
-        fin, c_init, c_loop_sched, c_loop_comp, c_done : out std_logic
+        fin, c_init, c_done : out std_logic;
+        -- Comandos dos subestados de agendamento e compressão
+        c_sched1, c_sched2, c_sched3 : out std_logic;
+        c_comp1, c_comp2, c_comp3, c_comp4 : out std_logic
     );
 end entity;
 
@@ -36,18 +39,25 @@ begin
                     next_state <= S_IDLE;
                 end if;
 
-            when S_INIT => next_state <= S_SCHED;
+            when S_INIT => next_state <= S_SCHED1;
 
-            when S_SCHED => if o_loop_last = '1' then
-                    next_state <= S_COMP;
+            -- Subestados de agendamento: calcula s0, depois s1 e por fim a palavra W
+            when S_SCHED1 => next_state <= S_SCHED2;
+            when S_SCHED2 => next_state <= S_SCHED3;
+            when S_SCHED3 => if o_loop_last = '1' then
+                    next_state <= S_COMP1;
                 else
-                    next_state <= S_SCHED;
+                    next_state <= S_SCHED1;
                 end if;
 
-            when S_COMP => if o_loop_last = '1' then
+            -- Subestados de compressão: calcula temp1, depois temp2 e por fim os registradores
+            when S_COMP1 => next_state <= S_COMP2;
+            when S_COMP2 => next_state <= S_COMP3;
+            when S_COMP3 => next_state <= S_COMP4;
+            when S_COMP4 => if o_loop_last = '1' then
                     next_state <= S_DONE;
                 else
-                    next_state <= S_COMP;
+                    next_state <= S_COMP1;
                 end if;
 
             when S_DONE => next_state <= S_IDLE;
@@ -59,8 +69,13 @@ begin
 
     -- Lógica de Saída (Máquina de Moore): Ativa os comandos apenas baseado no estado em que está
     c_init       <= '1' when state = S_INIT else '0';
-    c_loop_sched <= '1' when state = S_SCHED else '0';
-    c_loop_comp  <= '1' when state = S_COMP else '0';
+    c_sched1     <= '1' when state = S_SCHED1 else '0';
+    c_sched2     <= '1' when state = S_SCHED2 else '0';
+    c_sched3     <= '1' when state = S_SCHED3 else '0';
+    c_comp1      <= '1' when state = S_COMP1 else '0';
+    c_comp2      <= '1' when state = S_COMP2 else '0';
+    c_comp3      <= '1' when state = S_COMP3 else '0';
+    c_comp4      <= '1' when state = S_COMP4 else '0';
     c_done       <= '1' when state = S_DONE else '0';
     fin          <= '1' when state = S_DONE else '0'; -- Avisa quem está fora do chip que o cálculo acabou
 

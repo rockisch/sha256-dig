@@ -15,7 +15,7 @@ architecture sha256_tb_arch of sha256_tb is
     signal rdy      : std_logic := '0';
     signal fin      : std_logic := '0';
     signal chunk_in : std_logic_vector(511 downto 0) := (others => '0');
-    
+
     -- Valores iniciais padronizados dos registradores do SHA-256
     signal h_in     : H_TYPE := (
         X"6a09e667", X"bb67ae85", X"3c6ef372", X"a54ff53a",
@@ -54,12 +54,12 @@ architecture sha256_tb_arch of sha256_tb is
 begin
     -- Geração do sinal de clock (alterna a cada 1 ns, período total de 2 ns)
     clk <= not clk after 1 ns;
-    
+
     -- Geração do pulso de reset (inicia em '1' e vai para '0' após 2 ns)
     rst <= '1', '0' after 2 ns;
 
     -- Instanciação do módulo criptográfico principal (Device Under Test)
-    dut: entity work.sha256 port map (
+    dut: entity work.sha256 port map(
         clk => clk, rst => rst, rdy => rdy, fin => fin,
         chunk => chunk_in, h_in => h_in, h_out => h_out
     );
@@ -67,11 +67,11 @@ begin
     -- Processo de estímulo: injeta os dados de teste e controla a simulação
     stimulus: process begin
         wait for 4 ns;
-        
+
         -- Carrega a string "abc" no início do bloco de dados
         chunk_in(511 downto 511-23) <= get_string_vector("abc");
         wait for 2 ns;
-        
+
         -- Aplica a formatação de padding no bloco
         chunk_in <= get_final_chunk(3, chunk_in);
         wait for 2 ns;
@@ -79,23 +79,23 @@ begin
         -- Envia o pulso de 'ready' para a FSM iniciar o processamento
         rdy <= '1';
         wait for 2 ns;
-        rdy <= '0'; 
+        rdy <= '0';
 
         -- Pausa a execução do testbench até que o sinal 'fin' indique a conclusão
         wait until fin = '1';
-        
+
         -- Aguarda tempo adicional para garantir a propagação dos dados nos registradores de saída
         wait for 5 ns;
 
         -- Imprime o resultado final formatado em hexadecimal no console do simulador
         report "================================================================";
         report "RESULTADO DO HASH SHA-256 DA PALAVRA 'abc':";
-        report to_hstring(h_out(0)) & to_hstring(h_out(1)) & 
-               to_hstring(h_out(2)) & to_hstring(h_out(3)) & 
-               to_hstring(h_out(4)) & to_hstring(h_out(5)) & 
+        report to_hstring(h_out(0)) & to_hstring(h_out(1)) &
+               to_hstring(h_out(2)) & to_hstring(h_out(3)) &
+               to_hstring(h_out(4)) & to_hstring(h_out(5)) &
                to_hstring(h_out(6)) & to_hstring(h_out(7));
         report "================================================================";
-        
+
         -- Encerra a simulação
         finish;
     end process stimulus;
