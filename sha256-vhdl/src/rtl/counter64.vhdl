@@ -13,8 +13,8 @@ entity counter64 is
 end entity;
 
 architecture counter64_arch of counter64 is
-    -- Define o valor inicial do contador como 16
-    constant INITIAL : unsigned(5 downto 0) := to_unsigned(16, 6);
+    -- Define o valor inicial do contador como 0 (conta as 64 rodadas, de 0 a 63)
+    constant INITIAL : unsigned(5 downto 0) := to_unsigned(0, 6);
 
     signal count     : unsigned(5 downto 0) := INITIAL;
     signal result    : unsigned(6 downto 0);
@@ -25,7 +25,7 @@ begin
     -- Processo síncrono acionado pelo clock
     process(clk, rst) begin
         if rst = '1' then
-            -- Reset assíncrono: retorna ao valor inicial (16)
+            -- Reset assíncrono: retorna ao valor inicial (0)
             count <= INITIAL;
         elsif rising_edge(clk) then
             -- Incrementa o contador apenas se o sinal 'increase' estiver ativo

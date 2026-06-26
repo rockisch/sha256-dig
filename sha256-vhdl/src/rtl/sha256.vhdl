@@ -16,23 +16,21 @@ end entity;
 architecture sha256_arch of sha256 is
     -- Sinais internos (fios) usados para conectar a Base de Controle à Base Operativa
     signal o_loop_last, c_init, c_done : std_logic;
-    signal c_sched1, c_sched2, c_sched3, c_comp1, c_comp2, c_comp3, c_comp4 : std_logic;
+    signal c_r1, c_r2 : std_logic;
 begin
 
     -- Instancia a Base de Controle (O "cérebro" que dita qual passo executar)
     arch_bc: entity work.sha256_bc port map(
         clk=>clk, rst=>rst, rdy=>rdy, fin=>fin,
         o_loop_last=>o_loop_last, c_init=>c_init, c_done=>c_done,
-        c_sched1=>c_sched1, c_sched2=>c_sched2, c_sched3=>c_sched3,
-        c_comp1=>c_comp1, c_comp2=>c_comp2, c_comp3=>c_comp3, c_comp4=>c_comp4
+        c_r1=>c_r1, c_r2=>c_r2
     );
 
     -- Instancia a Base Operativa (Os "músculos" que fazem as contas e guardam os dados)
     arch_bo: entity work.sha256_bo port map(
         clk=>clk, rst=>rst, chunk=>chunk, h_in=>h_in, h_out=>h_out,
         o_loop_last=>o_loop_last, c_init=>c_init, c_done=>c_done,
-        c_sched1=>c_sched1, c_sched2=>c_sched2, c_sched3=>c_sched3,
-        c_comp1=>c_comp1, c_comp2=>c_comp2, c_comp3=>c_comp3, c_comp4=>c_comp4
+        c_r1=>c_r1, c_r2=>c_r2
     );
 
 end architecture;
