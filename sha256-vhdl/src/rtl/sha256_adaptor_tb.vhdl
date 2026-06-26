@@ -15,9 +15,11 @@ architecture sha256_adaptor_tb_arch of sha256_adaptor_tb is
     signal rdy        : std_logic := '0';
     signal fin        : std_logic := '0';
     signal chunk_part : std_logic_vector(127 downto 0) := (others => '0');
+    signal h_in_part  : std_logic_vector(63 downto 0)  := (others => '0');
 
-    -- Valores iniciais padronizados dos registradores do SHA-256
-    signal h_in       : H_TYPE := (
+    -- Valores iniciais padronizados dos registradores do SHA-256 (referencia local,
+    -- enviada ao adaptador em 4 fatias de 64 bits)
+    constant h_in     : H_TYPE := (
         X"6a09e667", X"bb67ae85", X"3c6ef372", X"a54ff53a",
         X"510e527f", X"9b05688c", X"1f83d9ab", X"5be0cd19"
     );
@@ -61,7 +63,7 @@ begin
     -- Instanciacao do adaptador (Device Under Test)
     dut: entity work.sha256_adaptor port map (
         clk => clk, rst => rst, rdy => rdy, fin => fin,
-        chunk_part => chunk_part, h_in => h_in, h_out => h_out
+        chunk_part => chunk_part, h_in_part => h_in_part, h_out => h_out
     );
 
     -- Processo de estimulo: monta o bloco "abc" com padding e o envia em 4 fatias
@@ -75,10 +77,12 @@ begin
         full_chunk(511 downto 511-23) := get_string_vector("abc");
         full_chunk := get_final_chunk(3, full_chunk);
 
-        -- Envia as 4 fatias de 128 bits, da mais significativa para a menos.
-        -- Cada fatia e acompanhada de um pulso de rdy que o adaptador captura.
+        -- Envia as 4 fatias da mais significativa para a menos: a cada pulso de rdy
+        -- vao juntas uma fatia de 128 bits da mensagem e uma fatia de 64 bits (duas
+        -- palavras) do estado inicial do hash.
         for i in 0 to 3 loop
             chunk_part <= full_chunk(511 - 128*i downto 384 - 128*i);
+            h_in_part  <= h_in(2*i) & h_in(2*i + 1);
             wait for 2 ns;
 
             rdy <= '1';
