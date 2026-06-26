@@ -1,0 +1,28 @@
+{
+    "grupo": {
+        "nome": "grupo A",
+        "alunos": [
+          {"nome": "Otavio Patricio Goulart", "matricula": "25204059"},
+          {"nome": "Aluno 2", "matricula": "5678"}
+          {"nome": "Aluno 2", "matricula": "5678"}
+          {"nome": "Aluno 2", "matricula": "5678"}
+        ]
+    },
+    "quartus": {
+        "os": "Ubuntu (imagem Quartus II)",
+        "versao": "13.0.1 (completar)",
+        "fpga": {
+            "familia": "Cyclone II",
+            "dispositivo": "EP2C5AF256A7"
+        }
+    },
+    "utilizacao": {
+        "total combinational functions": 123,
+        "dedicated logic registers": 12,
+        "total pins": 5
+    },
+    "atraso": {
+        "Fmax": 2.5,
+        "unidade": "MHz"
+    }
+}
