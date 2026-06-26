@@ -4,5 +4,5 @@ DIRNAME=$(cd "$(dirname "$0")" && pwd)
 
 ( cd "$DIRNAME/build" && ghdl --remove --std=08 )
 ( cd "$DIRNAME/build" && ghdl -i --std=08 "$DIRNAME"/src/rtl/*.vhdl )
-( cd "$DIRNAME/build" && ghdl -m --std=08 sha256 )
-( cd "$DIRNAME/build" && ghdl -r --std=08 sha256 )
+( cd "$DIRNAME/build" && ghdl -m --std=08 sha256_tb )
+( cd "$DIRNAME/build" && ghdl -r --std=08 sha256_tb )
