@@ -7,9 +7,9 @@ Este projeto consiste na modelagem e implementação em hardware de um núcleo c
 # Equipe
 
 - **Otavio Patricio Goulart** — Matrícula: **25204059**
--
--
--
+- **João Carneiro Haas** - Matrícula: **25204064**
+- **João Henrique dos Santos Chalegre** - Matrícula: **25203061**
+- **Vinicius Rodrigues Duarte** Matrícula: **25203682**
 
 ---
 
@@ -25,16 +25,17 @@ Implementada como uma **Máquina de Estados Finitos (FSM)** com cinco estados pr
 
 - `S_IDLE`
 - `S_INIT`
-- `S_SCHED`
-- `S_COMP`
+- `S_R1`
+- `S_R2`
 - `S_DONE`
 
 A FSM é responsável por coordenar toda a execução do algoritmo, determinando o momento em que a Base Operativa deve:
 
-- carregar os dados;
-- expandir a mensagem (*Message Schedule*);
-- executar as 64 rodadas de compressão;
+- carregar os dados e a mensagem na janela;
+- executar as 64 rodadas, cada uma dividida em dois subestados (`S_R1`/`S_R2`);
 - sinalizar o término da operação.
+
+Cada rodada é dividida em `S_R1` e `S_R2` para encurtar o caminho crítico. A expansão da mensagem (*Message Schedule*) e a compressão são intercaladas dentro do mesmo laço de rodadas, em vez de serem etapas separadas.
 
 ---
 
@@ -44,10 +45,12 @@ A FSM é responsável por coordenar toda a execução do algoritmo, determinando
 
 Contém:
 
-- memória `W` utilizada pelo **Message Schedule**;
+- a janela deslizante `W` de 16 palavras utilizada pelo **Message Schedule**;
 - registradores de trabalho `a`, `b`, `c`, `d`, `e`, `f`, `g` e `h`.
 
-Durante cada ciclo de clock são executadas as operações principais do algoritmo, incluindo o cálculo dos valores temporários **T1** e **T2**, responsáveis pela atualização dos registradores de trabalho.
+A janela `W` guarda apenas 16 palavras (em vez das 64 do algoritmo padrão), com taps fixos (W(0)=i-16, W(1)=i-15, W(9)=i-7, W(14)=i-2). Isso evita o multiplexador de leitura 64:1 e o decodificador de escrita de 64 vias que a memória completa exigiria. A cada rodada a janela é deslocada uma posição e a nova palavra entra no fim.
+
+As operações de uma rodada se distribuem em dois subestados. Em `S_R1` calcula-se a palavra do schedule `wt`, a soma parcial `temp1_part` (h + Σ1(e) + Ch + K[i]) e `temp2` (Σ0(a) + Maj). Em `S_R2` completa-se `temp1 = temp1_part + wt` e atualizam-se os registradores de trabalho.
 
 ---
 
@@ -76,31 +79,47 @@ Essa separação torna o código da Base Operativa mais limpo, organizado e modu
 
 # Exemplo de Código (Base Operativa)
 
-O trecho abaixo mostra a atualização dos registradores durante o laço principal de compressão.
+O trecho abaixo mostra os dois subestados de uma rodada. Em `S_R1` calculam-se a palavra do schedule e as somas parciais; em `S_R2` completa-se `temp1` e atualizam-se os registradores.
 
 ```vhdl
-elsif c_loop_comp = '1' then
+elsif c_r1 = '1' then
     loop_i := to_integer(loop_count);
 
-    T1 := std_logic_vector(
-            unsigned(h)
-          + unsigned(sha_bsig1(e))
-          + unsigned(sha_ch(e, f, g))
-          + unsigned(K(loop_i))
-          + unsigned(W(loop_i)));
+    -- Funções auxiliares combinatórias (small sigma, big sigma, ch e maj)
+    s0     := sha_ssig0(W(1));
+    s1     := sha_ssig1(W(14));
+    s0_big := sha_bsig0(a);
+    s1_big := sha_bsig1(e);
+    ch     := sha_ch(e, f, g);
+    maj    := sha_maj(a, b, c);
 
-    T2 := std_logic_vector(
-            unsigned(sha_bsig0(a))
-          + unsigned(sha_maj(a, b, c)));
+    -- Palavra do schedule: direto da mensagem nas 16 primeiras rodadas,
+    -- depois pela recorrência lida em posições fixas da janela
+    if loop_count < 16 then
+        wt := W(0);
+    else
+        wt := std_logic_vector(unsigned(W(0)) + unsigned(s0) + unsigned(W(9)) + unsigned(s1));
+    end if;
 
+    temp1_part := std_logic_vector(unsigned(h) + unsigned(s1_big) + unsigned(ch) + unsigned(K(loop_i)));
+    temp2      := std_logic_vector(unsigned(s0_big) + unsigned(maj));
+
+    -- Desloca a janela uma posição e insere a palavra atual no fim
+    for j in 0 to 14 loop
+        W(j) <= W(j + 1);
+    end loop;
+    W(15) <= wt;
+
+elsif c_r2 = '1' then
+    temp1 := std_logic_vector(unsigned(temp1_part) + unsigned(wt));
     h := g;
     g := f;
     f := e;
-    e := std_logic_vector(unsigned(d) + unsigned(T1));
+    e := std_logic_vector(unsigned(d) + unsigned(temp1));
     d := c;
     c := b;
     b := a;
-    a := std_logic_vector(unsigned(T1) + unsigned(T2));
+    a := std_logic_vector(unsigned(temp1) + unsigned(temp2));
 ```
 
 ---
@@ -132,12 +151,15 @@ Esse valor corresponde exatamente ao hash oficial da mensagem `"abc"` definido p
 
 ```text
 .
-├── sha256.vhdl          # Top-Level
-├── sha256_bc.vhdl       # Base de Controle (FSM)
-├── sha256_bo.vhdl       # Base Operativa (Datapath)
-├── counter64.vhdl       # Contador das 64 rodadas
-├── sha256_pkg.vhdl      # Funções auxiliares do SHA-256
-└── sha256_tb.vhdl       # Testbench
+├── sha256.vhdl              # Top-Level do núcleo
+├── sha256_bc.vhdl           # Base de Controle (FSM)
+├── sha256_bo.vhdl           # Base Operativa (Datapath)
+├── counter64.vhdl           # Contador das 64 rodadas
+├── sha256_pkg.vhdl          # Tipos e funções auxiliares do SHA-256
+├── sha256_tb.vhdl           # Testbench do núcleo
+├── sha256_adaptor.vhdl      # Adaptador (recebe a mensagem em fatias de 128 bits)
+├── sha256_adaptor_bc.vhdl   # Base de Controle do adaptador (FSM)
+└── sha256_adaptor_tb.vhdl   # Testbench do adaptador
 ```
 
 ---
@@ -151,16 +173,15 @@ IDLE
 INIT
   │
   ▼
-SCHED
-  │
-  ▼
-COMP (64 ciclos)
-  │
-  ▼
-DONE
-  │
-  ▼
-IDLE
+R1 ──► R2 ──┐  (64 rodadas: R2 volta para R1 até o contador estourar)
+  ▲         │
+  └─────────┘
+            │
+            ▼
+          DONE
+            │
+            ▼
+          IDLE
 ```
 
 ---
