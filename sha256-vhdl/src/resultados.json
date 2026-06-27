@@ -2,27 +2,27 @@
     "grupo": {
         "nome": "grupo A",
         "alunos": [
+          {"nome": "João Henrique dos Santos Chalegre", "matricula": "25203061"},
+          {"nome": "Vinicius Rodrigues Duarte", "matricula": "25203682"},
           {"nome": "Otavio Patricio Goulart", "matricula": "25204059"},
-          {"nome": "Aluno 2", "matricula": "5678"}
-          {"nome": "Aluno 2", "matricula": "5678"}
-          {"nome": "Aluno 2", "matricula": "5678"}
+          {"nome": "João Carneiro Haas", "matricula": "25204064"}
         ]
     },
     "quartus": {
-        "os": "Ubuntu (imagem Quartus II)",
-        "versao": "13.0.1 (completar)",
+        "os": "Ubuntu (mint imagem Quartus)",
+        "versao": "25.1std.0 Build 1129 10/21/2025 SC Lite Edition",
         "fpga": {
-            "familia": "Cyclone II",
-            "dispositivo": "EP2C5AF256A7"
+            "familia": "Cyclone IV E",
+            "dispositivo": "EP4CE40F29C7"
         }
     },
     "utilizacao": {
-        "total combinational functions": 123,
-        "dedicated logic registers": 12,
-        "total pins": 5
+        "total combinational functions": 1690,
+        "dedicated logic registers": 1907,
+        "total pins": 452
     },
     "atraso": {
-        "Fmax": 2.5,
+        "Fmax": 125.02,
         "unidade": "MHz"
     }
 }

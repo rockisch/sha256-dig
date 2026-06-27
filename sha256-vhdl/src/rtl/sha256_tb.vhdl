@@ -17,20 +17,51 @@ architecture sha256_tb_arch of sha256_tb is
     signal chunk_in : std_logic_vector(511 downto 0) := (others => '0');
 
     -- Valores iniciais padronizados dos registradores do SHA-256
-    signal h_in     : H_TYPE := (
+    constant H_INIT : H_TYPE := (
         X"6a09e667", X"bb67ae85", X"3c6ef372", X"a54ff53a",
         X"510e527f", X"9b05688c", X"1f83d9ab", X"5be0cd19"
     );
+    signal h_in     : H_TYPE := H_INIT;
     signal h_out    : H_TYPE := (others => (others => '0'));
+
+    -- Hash SHA-256 esperado para a palavra "abc"
+    constant ABC_EXPECTED : H_TYPE := (
+        X"ba7816bf", X"8f01cfea", X"414140de", X"5dae2223",
+        X"b00361a3", X"96177a9c", X"b410ff61", X"f20015ad"
+    );
+
+    -- Mensagem de teste de dois blocos (78 bytes): exercita o encadeamento de
+    -- chunks usando o h_out de um bloco como h_in do bloco seguinte. Os primeiros
+    -- 64 bytes formam o primeiro bloco; os 14 restantes recebem o padding final.
+    constant LOREM        : string  := "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor";
+    constant LOREM_REMAIN : integer := LOREM'length - 64;
+
+    -- Hash SHA-256 esperado para a mensagem LOREM
+    constant LOREM_EXPECTED : H_TYPE := (
+        X"1c3f958a", X"bd85c549", X"05c97fe8", X"e0628fe7",
+        X"64957119", X"62a27daa", X"e3403378", X"1486da00"
+    );
 
     -- Função para aplicar o preenchimento (padding) obrigatório do SHA-256:
     -- Adiciona o bit '1', preenche com zeros e insere o tamanho original no final.
-    function get_final_chunk(length : integer; chunk : std_logic_vector(511 downto 0)) return std_logic_vector is
+    -- 'length' é a quantidade de bytes de dados neste bloco final; 'total_length'
+    -- é o tamanho total da mensagem em bytes, usado no campo de comprimento (em
+    -- bits) ao final do bloco. Para mensagens de um único bloco os dois coincidem,
+    -- por isso 'total_length' assume 'length' por padrão; em mensagens de vários
+    -- blocos é preciso informar o total para que o campo de comprimento fique certo.
+    function get_final_chunk(length : integer; chunk : std_logic_vector(511 downto 0);
+                             total_length : integer := -1) return std_logic_vector is
         variable result : std_logic_vector(511 downto 0);
+        variable total  : integer;
     begin
+        if total_length < 0 then
+            total := length;
+        else
+            total := total_length;
+        end if;
         result := (others => '0');
         result(511 - (length * 8)) := '1';
-        result(31 downto 0) := std_logic_vector(to_unsigned(length * 8, 32));
+        result(31 downto 0) := std_logic_vector(to_unsigned(total * 8, 32));
         if length > 0 then
             result(511 downto 512 - length * 8) := chunk(511 downto 512 - length * 8);
         end if;
@@ -88,13 +119,67 @@ begin
         wait for 5 ns;
 
         -- Imprime o resultado final formatado em hexadecimal no console do simulador
-        report "================================================================";
-        report "RESULTADO DO HASH SHA-256 DA PALAVRA 'abc':";
-        report to_hstring(h_out(0)) & to_hstring(h_out(1)) &
+        report LF & "message: abc" & LF & "hash: " &
+               to_hstring(h_out(0)) & to_hstring(h_out(1)) &
                to_hstring(h_out(2)) & to_hstring(h_out(3)) &
                to_hstring(h_out(4)) & to_hstring(h_out(5)) &
                to_hstring(h_out(6)) & to_hstring(h_out(7));
-        report "================================================================";
+
+        -- Valida que o hash calculado bate com o valor esperado
+        assert h_out = ABC_EXPECTED
+            report "FALHA: hash de 'abc' diferente do esperado!"
+            severity failure;
+
+        -- ============================================================
+        -- Segundo teste: mensagem de dois blocos ('lorem ipsum')
+        -- ============================================================
+        -- Reinicia o estado do hash para os valores iniciais padrão antes de
+        -- processar o primeiro bloco da mensagem.
+        h_in <= H_INIT;
+        wait for 2 ns;
+
+        -- Primeiro bloco: os 64 primeiros bytes da mensagem entram crus, sem
+        -- padding, pois ainda há mais dados a processar.
+        chunk_in <= get_string_vector(LOREM(1 to 64));
+        wait for 2 ns;
+
+        rdy <= '1';
+        wait for 2 ns;
+        rdy <= '0';
+
+        wait until fin = '1';
+        wait for 5 ns;
+
+        -- Encadeia os blocos: o hash intermediário (h_out) deste bloco vira o
+        -- estado inicial (h_in) do bloco seguinte.
+        h_in <= h_out;
+        wait for 2 ns;
+
+        -- Segundo (e último) bloco: posiciona os bytes restantes no topo e aplica
+        -- o padding final informando o tamanho TOTAL da mensagem ('LOREM'length).
+        chunk_in <= (others => '0');
+        chunk_in(511 downto 512 - LOREM_REMAIN * 8) <= get_string_vector(LOREM(65 to LOREM'length));
+        wait for 2 ns;
+        chunk_in <= get_final_chunk(LOREM_REMAIN, chunk_in, LOREM'length);
+        wait for 2 ns;
+
+        rdy <= '1';
+        wait for 2 ns;
+        rdy <= '0';
+
+        wait until fin = '1';
+        wait for 5 ns;
+
+        report LF & "message: " & LOREM & LF & "hash: " &
+               to_hstring(h_out(0)) & to_hstring(h_out(1)) &
+               to_hstring(h_out(2)) & to_hstring(h_out(3)) &
+               to_hstring(h_out(4)) & to_hstring(h_out(5)) &
+               to_hstring(h_out(6)) & to_hstring(h_out(7));
+
+        -- Valida que o hash calculado bate com o valor esperado
+        assert h_out = LOREM_EXPECTED
+            report "FALHA: hash de dois blocos diferente do esperado!"
+            severity failure;
 
         -- Encerra a simulação
         finish;

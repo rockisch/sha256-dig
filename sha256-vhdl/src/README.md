@@ -1,6 +1,6 @@
-# Atividade Prática 2
+# Projeto SHA-256 VHDL
 
-Este projeto consiste na modelagem e implementação em hardware de um núcleo criptográfico **SHA-256 (Secure Hash Algorithm de 256 bits)** utilizando a linguagem **VHDL**. O sistema é capaz de receber um bloco de mensagem de **512 bits** e calcular o seu hash correspondente de **256 bits** através de uma arquitetura síncrona.
+Implementação do algorítmo SHA-256 em VHDL.
 
 ---
 
@@ -15,13 +15,28 @@ Este projeto consiste na modelagem e implementação em hardware de um núcleo c
 
 # Descrição
 
-O circuito foi desenvolvido adotando as melhores práticas de projeto de hardware, separando a lógica em uma **Base de Controle (Unidade de Controle)** e uma **Base Operativa (Fluxo de Dados)**. O encapsulamento final é realizado pelo arquivo de nível superior **`sha256.vhdl`**, responsável por instanciar e conectar ambas as bases.
+Este projeto implementa o algoritmo SHA-256 como um componente VHDL. A implementação utiliza a separação entre bloco operativo e bloco de controle visto em aula.
 
-A arquitetura é composta pelos seguintes módulos:
+O componente recebe como input o chunk (`chunk[512]`) e o estado (`h_in[256]`) atual, e retorna o próximo estado (`h_out[256]`). Enquanto seria possível definir uma interface com somente o chunk de input e o h_out de output, a implementação escolhida possibilita o cálculo do hash para mensagens maiores do que 447 bits sem atrelar o mesmo a nenhum modelo específico de acesso a memória.
 
-## Base de Controle (`sha256_bc.vhdl`)
+Devido a esse modelo, é responsabilidade de quem executa o algorítmo garantir que os valores de 'h_in' e 'chunk' sigam a especificação do SHA-256. Mais especificamente, 'h_in' deve ter como valor inicial algunas constantes; depois de cada processamento do chunk 'h_in' deve receber 'h_out'; e o ultimo 'chunk' deve receber um 'padding' especial.
 
-Implementada como uma **Máquina de Estados Finitos (FSM)** com cinco estados principais:
+> [!NOTE]
+> O número 447 vem do fato que o algorítmo requer que no mínimo 1 + 64 bits sejam 'apendados' no fim da mensagem. Portanto, qualquer bloco maior do que 447 bits irá necessariamente requerer 2 processamentos de chunk.
+
+## Algorítmo
+
+No geral, o algorítmo foi baseado na parte de processamento de chunk do pseudocódigo disponivel na página da wikipédia: https://en.wikipedia.org/wiki/SHA-2#Pseudocode
+
+Uma modificação consideravel que foi feita foi mudar o 'message schedule' ('w') para ser um 'sliding window' dos ultimos 16 valores, ao invés de ser um array de 64 valores populados no começo do algorítmo. Inicialmente haviamos feito como no algorítmo, mas como precisavamos indexar esse valor depois, isso acabou criando um mux 64:1, o que deixou muito dificil a implementação do datapath.
+
+Porém, olhando o algorítmo de população, é possivel ver que o valor `w[i]` só depende dos ultimos 16 valores, e o uso de 'w' depois é incremental. Portanto, é possivel sempre calcular o 'proximo' valor de 'w' a medida que o mesmo é requerido desde que os ultimos 16 valores de 'w' tenham sido salvos.
+
+Além dessa optimização, também foi separado o cálculo de 'temp1' entre 2 clocks para a redução do caminho crítico, já que precisamos calcular o 'w' no mesmo clock que o algorítmo original faz o 'assignment' para 'temp1'.
+
+## FSM
+
+O bloco de controle define esses estados:
 
 - `S_IDLE`
 - `S_INIT`
@@ -29,199 +44,27 @@ Implementada como uma **Máquina de Estados Finitos (FSM)** com cinco estados pr
 - `S_R2`
 - `S_DONE`
 
-A FSM é responsável por coordenar toda a execução do algoritmo, determinando o momento em que a Base Operativa deve:
+'S_R1' e 'S_R2' executam 64 vezes em um loop, e assim como descrito acima, são os estados responsáveis pelo que é chamado o 'bloco de compressão'. Seria possível unificar os 2 estados em 1 só, mas como mencionado acima, eles foram separados para a redução do caminho crítico.
 
-- carregar os dados e a mensagem na janela;
-- executar as 64 rodadas, cada uma dividida em dois subestados (`S_R1`/`S_R2`);
-- sinalizar o término da operação.
+## Contador com Overflow
 
-Cada rodada é dividida em `S_R1` e `S_R2` para encurtar o caminho crítico. A expansão da mensagem (*Message Schedule*) e a compressão são intercaladas dentro do mesmo laço de rodadas, em vez de serem etapas separadas.
+Um detalhe de implementação interessante, é que como o nosso loop alinha em uma potência de 2 (64), implementamos o nosso contador como um sinal de 6 bits, e no último estado deixamos ele dar overflow de volta para 0, enquanto o sinal de overflow é usado para sinalizar o bloco de controle que o loop foi finalizado.
 
----
+Como existem 2 estados no loop, seria possível utilizar o segundo para resetar o contador, mas esse jeito deixa o código mais simples.
 
-## Base Operativa (`sha256_bo.vhdl`)
+## Adaptor Wrapper
 
-É o módulo responsável pelo processamento do algoritmo SHA-256.
+Enquanto o componente funciona normalmente quando instanciado por outro componente, muitas placas tem um número limitado de pinos de input/output. Isso causa problemas na hora de sintetizar o projeto no quartus, já que a maioria das placas que que estávamos tentando utilizar tem um limite de 512 pinos, enquanto o nosso projeto tem `512 (chunk) + 256 (h_in) + 256 (h_out) = 1024`.
 
-Contém:
+Para solucionar isso, foi criado um 'sha256_adaptor.vhdl', que recebe o 'chunk' e o 'h_in' em pedaços menores, e concatena eles em um sinal interno antes de chamar o componente principal. Um bloco de controle auxiliar 'sha256_adaptor_bc.vhdl' foi crido para o auxílio dessa concatenação.
 
-- a janela deslizante `W` de 16 palavras utilizada pelo **Message Schedule**;
-- registradores de trabalho `a`, `b`, `c`, `d`, `e`, `f`, `g` e `h`.
+## Testes / Simulação
 
-A janela `W` guarda apenas 16 palavras (em vez das 64 do algoritmo padrão), com taps fixos (W(0)=i-16, W(1)=i-15, W(9)=i-7, W(14)=i-2). Isso evita o multiplexador de leitura 64:1 e o decodificador de escrita de 64 vias que a memória completa exigiria. A cada rodada a janela é deslocada uma posição e a nova palavra entra no fim.
+Para testar o circuito e também obter valores de simulação, foram utilizados 2 testbenches:
 
-As operações de uma rodada se distribuem em dois subestados. Em `S_R1` calcula-se a palavra do schedule `wt`, a soma parcial `temp1_part` (h + Σ1(e) + Ch + K[i]) e `temp2` (Σ0(a) + Maj). Em `S_R2` completa-se `temp1 = temp1_part + wt` e atualizam-se os registradores de trabalho.
+- 'sha256_tb.vhdl': Verifica o funcionamento do componente principal
+- 'sha256_adaptor_tb.vhdl': Verifica o funcionamento do adaptor
 
----
+Tirando o componente testado, os 2 testbenches são iguais.
 
-## Contador Inteligente (`counter64.vhdl`)
-
-Contador reutilizável responsável por controlar as **64 rodadas** do algoritmo SHA-256.
-
-Seu diferencial é a geração do sinal **`overflow`** de forma **puramente combinacional**, permitindo que a máquina de estados identifique imediatamente o término da contagem sem introduzir atrasos adicionais de sincronização.
-
----
-
-## Pacote de Funções (`sha256_pkg.vhdl`)
-
-Arquivo que centraliza todas as funções matemáticas exigidas pelo padrão SHA-256, incluindo:
-
-- `Ch`
-- `Maj`
-- `Σ0`
-- `Σ1`
-- `σ0`
-- `σ1`
-
-Essa separação torna o código da Base Operativa mais limpo, organizado e modular.
-
----
-
-# Exemplo de Código (Base Operativa)
-
-O trecho abaixo mostra os dois subestados de uma rodada. Em `S_R1` calculam-se a palavra do schedule e as somas parciais; em `S_R2` completa-se `temp1` e atualizam-se os registradores.
-
-```vhdl
-elsif c_r1 = '1' then
-    loop_i := to_integer(loop_count);
-
-    -- Funções auxiliares combinatórias (small sigma, big sigma, ch e maj)
-    s0     := sha_ssig0(W(1));
-    s1     := sha_ssig1(W(14));
-    s0_big := sha_bsig0(a);
-    s1_big := sha_bsig1(e);
-    ch     := sha_ch(e, f, g);
-    maj    := sha_maj(a, b, c);
-
-    -- Palavra do schedule: direto da mensagem nas 16 primeiras rodadas,
-    -- depois pela recorrência lida em posições fixas da janela
-    if loop_count < 16 then
-        wt := W(0);
-    else
-        wt := std_logic_vector(unsigned(W(0)) + unsigned(s0) + unsigned(W(9)) + unsigned(s1));
-    end if;
-
-    temp1_part := std_logic_vector(unsigned(h) + unsigned(s1_big) + unsigned(ch) + unsigned(K(loop_i)));
-    temp2      := std_logic_vector(unsigned(s0_big) + unsigned(maj));
-
-    -- Desloca a janela uma posição e insere a palavra atual no fim
-    for j in 0 to 14 loop
-        W(j) <= W(j + 1);
-    end loop;
-    W(15) <= wt;
-
-elsif c_r2 = '1' then
-    temp1 := std_logic_vector(unsigned(temp1_part) + unsigned(wt));
-    h := g;
-    g := f;
-    f := e;
-    e := std_logic_vector(unsigned(d) + unsigned(temp1));
-    d := c;
-    c := b;
-    b := a;
-    a := std_logic_vector(unsigned(temp1) + unsigned(temp2));
-```
-
----
-
-# Simulação
-
-A validação do circuito foi realizada utilizando um **Testbench** (`sha256_tb.vhdl`), que injeta a string de teste `"abc"` juntamente com as constantes de inicialização definidas pelo padrão SHA-256.
-
-Durante a simulação foram monitorados:
-
-- a evolução da Máquina de Estados;
-- os sinais internos do datapath;
-- o sinal de finalização (`fin`).
-
-Quando `fin` é ativado, o testbench aguarda **5 ns** para garantir a propagação completa do último ciclo de clock e imprime no console o hash final de **256 bits**, obtido pela concatenação dos oito registradores finais em formato hexadecimal.
-
-O resultado produzido foi:
-
-```text
-BA7816BF8F01CFEA414140DE5DAE2223
-B00361A396177A9CB410FF61F20015AD
-```
-
-Esse valor corresponde exatamente ao hash oficial da mensagem `"abc"` definido pelo padrão SHA-256, comprovando a corretude tanto da implementação do **Datapath** quanto da sincronização entre a Base de Controle e a Base Operativa.
-
----
-
-# Estrutura do Projeto
-
-```text
-.
-├── sha256.vhdl              # Top-Level do núcleo
-├── sha256_bc.vhdl           # Base de Controle (FSM)
-├── sha256_bo.vhdl           # Base Operativa (Datapath)
-├── counter64.vhdl           # Contador das 64 rodadas
-├── sha256_pkg.vhdl          # Tipos e funções auxiliares do SHA-256
-├── sha256_tb.vhdl           # Testbench do núcleo
-├── sha256_adaptor.vhdl      # Adaptador (recebe a mensagem em fatias de 128 bits)
-├── sha256_adaptor_bc.vhdl   # Base de Controle do adaptador (FSM)
-└── sha256_adaptor_tb.vhdl   # Testbench do adaptador
-```
-
----
-
-# Fluxo de Execução
-
-```text
-IDLE
-  │
-  ▼
-INIT
-  │
-  ▼
-R1 ──► R2 ──┐  (64 rodadas: R2 volta para R1 até o contador estourar)
-  ▲         │
-  └─────────┘
-            │
-            ▼
-          DONE
-            │
-            ▼
-          IDLE
-```
-
----
-
-# Principais Desafios Encontrados
-
-## Sincronização dos sinais
-
-Um dos maiores desafios encontrados durante o desenvolvimento foi o correto sincronismo entre o contador e a máquina de estados.
-
-Inicialmente, o sinal `overflow` era registrado, provocando um atraso de um ciclo de clock. Como consequência, a Base Operativa ainda executava uma iteração adicional, ocasionando um erro de **index-out-of-bounds**, no qual o algoritmo tentava acessar posições inválidas da memória `W`.
-
-A solução adotada foi implementar o `overflow` como um sinal **estritamente combinacional**, permitindo que a FSM encerrasse imediatamente o laço de compressão ao atingir a última rodada.
-
----
-
-## Visualização da memória W
-
-Outro desafio foi a limitação dos simuladores na exibição de sinais bidimensionais.
-
-Arquivos de ondas no formato **`.vcd`**, visualizados pelo **EPWave**, apresentam dificuldades para renderizar corretamente estruturas como a memória `W` e o vetor de saída `H`.
-
-Como alternativa, utilizou-se a função:
-
-```vhdl
-report to_hstring(...)
-```
-
-para imprimir diretamente no console os valores relevantes durante a simulação, tornando o processo de depuração significativamente mais confiável.
-
----
-
-# Resultado
-
-Arquitetura modular dividida em Base de Controle e Base Operativa.
-
-Implementação completa do algoritmo SHA-256 em VHDL.
-
-Execução correta das 64 rodadas de compressão.
-
-Hash gerado idêntico ao resultado oficial para a mensagem de teste `"abc"`.
-
-Projeto validado por simulação utilizando Testbench.
+Neles, se testa 2 payloads de mensagens e se verifica que o valor retornado bate com o esperado. O primeiro payload cabe em 1 chunk só, mas o segundo requer a execução do algorítmo 2 vezes.
