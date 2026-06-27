@@ -3,7 +3,6 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.sha256_pkg.all;
 
--- Unidade de processamento de dados (Datapath) do SHA-256
 entity sha256_bo is
     port(
         clk, rst    : in std_logic;
@@ -30,8 +29,6 @@ architecture sha256_bo_arch of sha256_bo is
     );
 
     -- 'Sliding window' de 16 palavras do message schedule.
-    -- Enquanto o algorítmo padrão inicializa os 64 valores no começo, ele
-    -- precisaria de um mux de 64:1.
     signal W : W_TYPE := (others => X"00000000");
     signal loop_count : unsigned(5 downto 0);
 begin
@@ -50,21 +47,19 @@ begin
         variable a, b, c, d, e, f, g, h : std_logic_vector(31 downto 0);
         -- Valor W temporário (wt), soma parcial de temp1 (temp1_part)
         variable wt, temp1_part, temp1, temp2 : std_logic_vector(31 downto 0);
-        -- Índice da rodada atual, derivado do contador
+        -- Índice da rodada atual
         variable loop_i : integer;
 
-        -- Essas variáveis são só combinatórias (calculadas e usadas no mesmo ciclo):
-        -- as funções small/big sigma, ch e maj que alimentam wt, temp1_part e temp2
+        -- Essas variáveis são só combinatórias (calculadas e usadas no mesmo ciclo)
         variable s0, s1, s0_big, s1_big, ch, maj : std_logic_vector(31 downto 0);
     begin
-        -- Lógica de reset assíncrono
         if rst = '1' then
             W <= (others => X"00000000");
             h_out <= (others => (others => '0'));
 
         elsif rising_edge(clk) then
 
-            -- Estado de inicialização: carrega o estado inicial e as 16 palavras
+            -- Estado de inicialização: arrega o estado inicial e as 16 palavras
             -- da mensagem na janela (a primeira palavra ocupa a posição mais antiga)
             if c_init = '1' then
                 for j in 0 to 15 loop

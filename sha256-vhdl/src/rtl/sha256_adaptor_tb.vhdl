@@ -4,12 +4,10 @@ use ieee.numeric_std.all;
 use std.env.finish;
 use work.sha256_pkg.all;
 
--- Entidade de teste (Testbench) do adaptador. Sem portas pois é o topo da simulação.
 entity sha256_adaptor_tb is
 end entity;
 
 architecture sha256_adaptor_tb_arch of sha256_adaptor_tb is
-    -- Sinais internos para estimular e monitorar o adaptador (DUT)
     signal clk        : std_logic := '0';
     signal rst        : std_logic := '1';
     signal rdy        : std_logic := '0';
@@ -45,10 +43,6 @@ architecture sha256_adaptor_tb_arch of sha256_adaptor_tb is
 
     -- Função de padding obrigatório do SHA-256: adiciona o bit '1', preenche com
     -- zeros e insere o tamanho original (em bits) ao final do bloco de 512 bits.
-    -- 'length' é a quantidade de bytes de dados neste bloco final; 'total_length'
-    -- é o tamanho total da mensagem em bytes, usado no campo de comprimento. Para
-    -- mensagens de um único bloco os dois coincidem, por isso 'total_length' assume
-    -- 'length' por padrão; em mensagens de vários blocos é preciso informar o total.
     function get_final_chunk(length : integer; chunk : std_logic_vector(511 downto 0);
                              total_length : integer := -1) return std_logic_vector is
         variable result : std_logic_vector(511 downto 0);

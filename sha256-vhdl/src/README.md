@@ -68,3 +68,5 @@ Para testar o circuito e também obter valores de simulação, foram utilizados 
 Tirando o componente testado, os 2 testbenches são iguais.
 
 Neles, se testa 2 payloads de mensagens e se verifica que o valor retornado bate com o esperado. O primeiro payload cabe em 1 chunk só, mas o segundo requer a execução do algorítmo 2 vezes.
+
+É possivel rodar os 2 testbenches usando GHDL com os scripts `scripts/run_tb.sh` e `scripts/run_adaptor_tb.sh`.

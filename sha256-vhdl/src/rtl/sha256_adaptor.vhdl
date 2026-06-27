@@ -1,7 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-use work.sha256_pkg.all; -- Importa o pacote com os tipos de dados customizados (como H_TYPE)
+use work.sha256_pkg.all;
 
 -- Adaptador de entrada: a placa não aceita tantos bits de entrada por vez, então a
 -- mensagem chega em 4 fatias de 128 bits e o estado inicial do hash chega em 4 fatias
@@ -9,11 +9,11 @@ use work.sha256_pkg.all; -- Importa o pacote com os tipos de dados customizados 
 -- quando estão cheios, aciona o núcleo SHA-256.
 entity sha256_adaptor is
     port(
-        clk, rst, rdy : in std_logic;                      -- Sincronismo e gatilho de cada fatia (rdy)
-        fin           : out std_logic;                     -- Sinalizador de conclusão do hash completo
+        clk, rst, rdy : in std_logic;
+        fin           : out std_logic;
         chunk_part    : in std_logic_vector(127 downto 0); -- Fatia de entrada da mensagem (128 bits)
         h_in_part     : in std_logic_vector(63 downto 0);  -- Fatia de entrada do estado do hash (64 bits)
-        h_out         : out H_TYPE                          -- Saída com o Hash final calculado
+        h_out         : out H_TYPE                         -- Saída com o próximo estado do hash (256 bits)
     );
 end entity;
 
@@ -25,24 +25,18 @@ architecture sha256_adaptor_arch of sha256_adaptor is
     -- Contador de qual fatia está sendo recebida (0 a 3)
     signal part_count : unsigned(1 downto 0) := (others => '0');
 
-    -- Fios de interligação entre a Base de Controle do adaptador e o datapath/núcleo
     signal c_capture, core_rdy, core_fin, parts_last : std_logic;
 begin
 
     -- Indica que a fatia capturada agora (índice 3) é a última do bloco de 512 bits
     parts_last <= '1' when part_count = "11" else '0';
 
-    -- Base de Controle (FSM) que orquestra a recepção das fatias e o disparo do núcleo
     adaptor_bc: entity work.sha256_adaptor_bc port map(
         clk => clk, rst => rst, rdy => rdy,
         parts_last => parts_last, core_fin => core_fin,
         c_capture => c_capture, core_rdy => core_rdy, fin => fin
     );
 
-    -- Datapath do adaptador: a cada captura registra simultaneamente uma fatia da
-    -- mensagem (128 bits) e uma fatia do hash inicial (64 bits = duas palavras) nas
-    -- posições corretas. A primeira fatia ocupa os bits/palavras mais significativos,
-    -- mantendo a ordem big-endian esperada pelo núcleo SHA-256.
     process(clk, rst) begin
         if rst = '1' then
             chunk_full <= (others => '0');
